@@ -61,7 +61,7 @@ class RankingNewsParser(Parser):
             comments_count = get_comments_count(oid, aid)
             self.save_comments_count_history(uid, comments_count)
 
-            news_article = parse_ranking_read(uid, comments_count, ranking_read.text)
+            news_article = parse_ranking_read(uid, comments_count, ranking_read.text, oid, aid)
             self.save_article(news_article)
 
             logger.info('| Current rankingRead : {}'.format(news_article))
@@ -100,7 +100,7 @@ def get_comments_count(oid, aid):
     return parsed['message']['result'][0]['count']
 
 
-def parse_ranking_read(uid, comments_count, ranking_read):
+def parse_ranking_read(uid, comments_count, ranking_read, oid, aid):
     soup = BeautifulSoup(ranking_read, "lxml")
     article = {
         'uid': uid,
@@ -108,6 +108,7 @@ def parse_ranking_read(uid, comments_count, ranking_read):
         'content': soup.select("._news_article_body")[0].text.strip(),
         'comments_count': comments_count,
         'initialized_at': soup.select(".media_end_head_info_datestamp_time")[0].text,
+        'url': 'https://news.naver.com/main/read.nhn?oid={}&aid={}'.format(oid, aid)
     }
 
     if len(soup.select(".media_end_head_info_datestamp_time")) > 1:
@@ -170,6 +171,7 @@ def request_comment_list(category, date, url, oid, aid):
         }
     )
     parsed_response = parse_jquery_jsonp(response)
+
     has_next_page = int(parsed_response['result']['pageModel']['nextPage']) > 0
     return parsed_response, has_next_page
 
