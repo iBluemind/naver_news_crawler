@@ -12,7 +12,7 @@ TIMEOUT = 5
 MIN_PROXY_COUNT = 2
 
 current_working_directory = os.getcwd()
-PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs_mac'.format(current_working_directory)
+PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs'.format(current_working_directory)
 
 
 # def from_proxy_lists():

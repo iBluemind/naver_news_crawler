@@ -226,7 +226,7 @@ async def get_comments(category, date, oid, aid, template, page=1):
         child_current = ''
         while True:
             if child_page > 1:
-                parsed_child_response, has_child_next_page = await get_more_child_comments(oid, aid,
+                parsed_child_response, has_child_next_page = await get_more_child_comments(category, date, oid, aid,
                                                                                      comment['uid'], child_page,
                                                                                      template, child_current)
             logger.info(
