@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
 
-import requests, logging, time, re, os
+import requests, logging, time, re, os, asyncio, functools
 from selenium import webdriver
-from requests.exceptions import ConnectTimeout, ProxyError, SSLError, ConnectionError
+from greatagain_parser_naver import loop
+from requests.exceptions import ConnectTimeout, ProxyError, SSLError, ConnectionError, ReadTimeout, ChunkedEncodingError
 
+
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko'
 
 TIMEOUT = 5
 MIN_PROXY_COUNT = 2
+
+current_working_directory = os.getcwd()
+PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs_mac'.format(current_working_directory)
 
 
 # def from_proxy_lists():
@@ -19,10 +25,7 @@ def from_hide_my_ip():
     :return:
     """
     url = 'https://www.hide-my-ip.com/proxylist.shtml'
-
-    current_working_directory = os.getcwd()
-    driver = webdriver.PhantomJS('{}/bin/phantomjs_mac'.format(current_working_directory))
-
+    driver = webdriver.PhantomJS(PHANTOM_JS_DRIVER_PATH)
     driver.implicitly_wait(3)
     driver.get(url)
 
@@ -42,8 +45,16 @@ def from_cyber_syndrome():
     url = 'http://www.cybersyndrome.net/pla6.html'
 
     proxies = []
-    res = requests.get(url)
-    proxies += re.findall('(\d+\.\d+\.\d+\.\d+:\d+)', res.text)
+    # res = requests.get(url)
+
+    driver = webdriver.PhantomJS(PHANTOM_JS_DRIVER_PATH)
+    driver.implicitly_wait(3)
+    driver.get(url)
+
+    # logging.debug(res.text)
+    # proxies += re.findall('(\d+\.\d+\.\d+\.\d+:\d+)', res.text)
+
+    proxies += re.findall('(\d+\.\d+\.\d+\.\d+:\d+)', driver.page_source)
     return proxies
 
 
@@ -54,7 +65,7 @@ def from_free_proxy_list():
     """
     urls = [
         'https://free-proxy-list.net/',
-        'https://free-proxy-list.net/anonymous-proxy.html'
+        # 'https://free-proxy-list.net/anonymous-proxy.html'
     ]
     proxies = []
 
@@ -66,7 +77,23 @@ def from_free_proxy_list():
     return proxies
 
 
-def get_proxies():
+async def test_proxy(proxy):
+    headers = {
+        'User-Agent': USER_AGENT
+    }
+
+    try:
+        await loop.run_in_executor(None, functools.partial(requests.get, "https://naver.com",
+                                                           headers=headers,
+                                                           timeout=(TIMEOUT, TIMEOUT),
+                                                           proxies={"http": proxy, "https": proxy}))
+        return proxy
+    except (ChunkedEncodingError, ConnectTimeout, ProxyError, SSLError, ConnectionError, ReadTimeout) as e:
+        logging.info("Skip proxy {} by {}".format(proxy, e))
+    return None
+
+
+async def get_proxies():
     proxies = set()
 
     functions = [
@@ -78,14 +105,13 @@ def get_proxies():
         proxy_list = func()
         logging.debug(proxy_list)
 
-        for proxy in proxy_list:
-            try:
-                requests.get("https://google.com", timeout=TIMEOUT, proxies={"http": proxy, "https": proxy})
-                proxies.add(proxy)
-            except (ConnectTimeout, ProxyError, SSLError, ConnectionError) as e:
-                logging.info("Skip proxy {} by {}".format(proxy, e))
+        futures = [asyncio.ensure_future(test_proxy(proxy)) for proxy in proxy_list]
+        results = await asyncio.gather(*futures)
+
+        proxies.update(list(filter(lambda x: x is not None, results)))
 
     if len(proxies) < MIN_PROXY_COUNT:
-        logging.error("Available proxies count is NOT satisfied! Current available is {}!".format(len(proxies)))
-        proxies = get_proxies()
+        logging.error('Available proxies count is NOT satisfied!' 
+                      'Current available is {}!'.format(len(proxies)))
+        proxies = await get_proxies()
     return proxies

@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 
-import requests, random, time, logging
+import requests, random, time, logging, asyncio, functools
 from requests.adapters import HTTPAdapter
+from requests.exceptions import ConnectionError, ProxyError
 from requests import Request
 # from config import PROXIES
 from .proxy import get_proxies
 from itertools import cycle
+from greatagain_parser_naver import loop
 
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
+MAX_RETRIES = 10
 REQUEST_TIMEOUT = 15
 
 
@@ -49,17 +52,29 @@ def get_random_user_agent():
 
 session = requests.Session()
 session.headers.update({'User-Agent': get_random_user_agent()})
-session.mount('https://', HTTPAdapter(max_retries=10))
-session.mount('http://', HTTPAdapter(max_retries=10))
+session.mount('https://', HTTPAdapter(max_retries=MAX_RETRIES))
+session.mount('http://', HTTPAdapter(max_retries=MAX_RETRIES))
 
-PROXIES = cycle(get_proxies())
+
+proxies = loop.run_until_complete(get_proxies())
+PROXIES = cycle(proxies)
+
+
+def refresh_proxies(must_be_deleted_proxy):
+    global proxies, PROXIES
+    try:
+        proxies.remove(must_be_deleted_proxy)
+    except KeyError as e:
+        logging.warning(e)
+        pass
+    from .proxy import MIN_PROXY_COUNT
+    if len(proxies) < MIN_PROXY_COUNT:
+        proxies = loop.run_until_complete(get_proxies())
+    PROXIES = cycle(proxies)
 
 
 def pick_proxies():
-    return {
-        'http': next(PROXIES),
-        'https': next(PROXIES),
-    }
+    return next(PROXIES)
 
 
 def make_request(method, url, **kwargs):
@@ -69,25 +84,35 @@ def make_request(method, url, **kwargs):
     return prepped
 
 
-def request(prepped_request):
+async def request(prepped_request):
+    selected_proxy = pick_proxies()
+
     try:
-        response = session.send(prepped_request, proxies=pick_proxies(), timeout=REQUEST_TIMEOUT)
+        response = await loop.run_in_executor(None, functools.partial(session.send,
+                                                                      prepped_request,
+                                                                      proxies={
+                                                                            'http': selected_proxy,
+                                                                            'https': selected_proxy,
+                                                                        },
+                                                                      timeout=REQUEST_TIMEOUT))
         # hang_like_human()
         return response
-    except requests.exceptions.ConnectionError as e:
+    except (ConnectionError, ProxyError) as e:
         logger.info('Occurred an ConnectionError {}!'.format(e))
-        hang_like_human(MAX_HUMAN_LIKE_TIME)
-        return request(prepped_request)
+        # hang_like_human(MAX_HUMAN_LIKE_TIME)
+
+        refresh_proxies(selected_proxy)
+        return await request(prepped_request)
 
 
-def get(url, **kwargs):
+async def get(url, **kwargs):
     prepped = make_request('GET', url, **kwargs)
-    return request(prepped)
+    return await request(prepped)
 
 
-def post(url, **kwargs):
+async def post(url, **kwargs):
     prepped = make_request('POST', url, **kwargs)
-    return request(prepped)
+    return await request(prepped)
 
 
 def hang_like_human(addition_time=0.0):

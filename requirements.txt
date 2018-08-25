@@ -4,3 +4,4 @@ lxml
 pymongo
 six
 selenium
+dnspython

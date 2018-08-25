@@ -20,8 +20,8 @@ class Repository(object):
 
 
 class MongoRepository(Repository):
-    def __init__(self, host, port, username, password, database_name):
-        self.connection = MongoClient('mongodb://{}:{}@{}:{}'.format(username, password, host, port))
+    def __init__(self, uri, database_name):
+        self.connection = MongoClient(uri)
         self.database = self.connection.get_database(database_name)
 
         self.articles = self.database.get_collection('articles')
