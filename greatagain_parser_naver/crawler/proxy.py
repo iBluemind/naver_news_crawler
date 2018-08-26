@@ -11,8 +11,8 @@ USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Ge
 TIMEOUT = 5
 MIN_PROXY_COUNT = 2
 
-current_working_directory = os.getcwd()
-PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs'.format(current_working_directory)
+PYTHONPATH = os.getenv("PYTHONPATH")
+PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs'.format(PYTHONPATH)
 
 
 # def from_proxy_lists():
