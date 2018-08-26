@@ -48,6 +48,16 @@ comment_templates = {
 
 
 class RankingNewsParser(Parser):
+    async def _parse_comments(self, aid, oid, news_article, page):
+        comments, has_next_page = await get_comments(
+            self.category,
+            self.date,
+            oid,
+            aid,
+            comment_templates[self.category],
+            page)
+        await self.save_comments(news_article['uid'], comments)
+
     async def _parse(self, link, ranking_read):
         parsed_link = urlparse(link)
         link_parameters = parse_qs(parsed_link.query)
@@ -57,28 +67,17 @@ class RankingNewsParser(Parser):
         uid = hashlib.md5("{}{}".format(oid, aid).encode()).hexdigest()
 
         comments_count = await get_comments_count(oid, aid)
-        self.save_comments_count_history(uid, comments_count)
+        await self.save_comments_count_history(uid, comments_count)
 
         news_article = parse_ranking_read(uid, comments_count, ranking_read.text, oid, aid)
-        self.save_article(news_article)
+        await self.save_article(news_article)
 
         logger.info('| Current rankingRead : {}'.format(news_article))
 
-        page = 1
-        while True:
-            comments, has_next_page = await get_comments(
-                self.category,
-                self.date,
-                oid,
-                aid,
-                comment_templates[self.category],
-                page)
-
-            self.save_comments(news_article['uid'], comments)
-
-            if not has_next_page:
-                break
-            page += 1
+        end_page = round(comments_count / 20)
+        futures = [asyncio.ensure_future(self._parse_comments(aid, oid, news_article, page))
+                   for page in range(1, end_page)]
+        await asyncio.wait(futures)
 
     async def run(self, category, date):
         self.category = category
