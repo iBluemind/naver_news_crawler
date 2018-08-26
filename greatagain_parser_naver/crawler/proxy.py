@@ -9,7 +9,7 @@ from requests.exceptions import ConnectTimeout, ProxyError, SSLError, Connection
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko'
 
 TIMEOUT = 5
-MIN_PROXY_COUNT = 2
+MIN_PROXY_COUNT = 3
 
 PYTHONPATH = os.getenv("PYTHONPATH")
 PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs'.format(PYTHONPATH)

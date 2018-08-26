@@ -2,7 +2,7 @@
 
 import requests, random, time, logging, asyncio, functools
 from requests.adapters import HTTPAdapter
-from requests.exceptions import ConnectionError, ProxyError
+from requests.exceptions import ConnectionError, ProxyError, ReadTimeout
 from requests import Request
 # from config import PROXIES
 from .proxy import get_proxies
@@ -97,7 +97,7 @@ async def request(prepped_request):
                                                                       timeout=REQUEST_TIMEOUT))
         # hang_like_human()
         return response
-    except (ConnectionError, ProxyError) as e:
+    except (ConnectionError, ProxyError, ReadTimeout) as e:
         logger.info('Occurred an ConnectionError {}!'.format(e))
         # hang_like_human(MAX_HUMAN_LIKE_TIME)
 
