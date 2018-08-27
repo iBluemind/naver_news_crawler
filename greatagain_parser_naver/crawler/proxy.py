@@ -83,7 +83,7 @@ async def test_proxy(proxy):
     }
 
     try:
-        await loop.run_in_executor(None, functools.partial(requests.get, "https://naver.com",
+        await loop.run_in_executor(None, functools.partial(requests.get, "https://www.naver.com",
                                                            headers=headers,
                                                            timeout=(TIMEOUT, TIMEOUT),
                                                            proxies={"http": proxy, "https": proxy}))

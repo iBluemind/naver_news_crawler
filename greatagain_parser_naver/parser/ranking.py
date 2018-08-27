@@ -15,13 +15,13 @@
 # 뉴스홈 : http://news.naver.com/main/home.nhn
 
 
-import logging, hashlib, urllib, asyncio
+import logging, hashlib, asyncio
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs
 from greatagain_parser_naver.parser import Parser
 from greatagain_parser_naver.crawler.client import get, post
 from greatagain_parser_naver.crawler.utils import parse_jquery_jsonp, generate_jquery_jsonp_nonce
-
+from greatagain_parser_naver.parser.exceptions import ParseResponseError
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -47,38 +47,11 @@ comment_templates = {
 }
 
 
+def get_article_uid(oid, aid):
+    return hashlib.md5("{}{}".format(oid, aid).encode()).hexdigest()
+
+
 class RankingNewsParser(Parser):
-    async def _parse_comments(self, aid, oid, news_article, page):
-        comments, has_next_page = await get_comments(
-            self.category,
-            self.date,
-            oid,
-            aid,
-            comment_templates[self.category],
-            page)
-        await self.save_comments(news_article['uid'], comments)
-
-    async def _parse(self, link, ranking_read):
-        parsed_link = urlparse(link)
-        link_parameters = parse_qs(parsed_link.query)
-
-        oid = link_parameters['oid'][0]
-        aid = link_parameters['aid'][0]
-        uid = hashlib.md5("{}{}".format(oid, aid).encode()).hexdigest()
-
-        comments_count = await get_comments_count(oid, aid)
-        await self.save_comments_count_history(uid, comments_count)
-
-        news_article = parse_ranking_read(uid, comments_count, ranking_read.text, oid, aid)
-        await self.save_article(news_article)
-
-        logger.info('| Current rankingRead : {}'.format(news_article))
-
-        end_page = round(comments_count / 20)
-        futures = [asyncio.ensure_future(self._parse_comments(aid, oid, news_article, page))
-                   for page in range(1, end_page)]
-        await asyncio.wait(futures)
-
     async def run(self, category, date):
         self.category = category
         self.date = date
@@ -87,15 +60,23 @@ class RankingNewsParser(Parser):
             future = asyncio.ensure_future(self._parse(link, ranking_read))
             await asyncio.wait_for(future, None)
 
+    async def _parse(self, link, article):
+        parsed_link = urlparse(link)
+        link_parameters = parse_qs(parsed_link.query)
 
-def get_reactions():
-    jquery = generate_jquery_jsonp_nonce()
-    q = urllib.parse.quote_plus('') # TODO
-    url = 'https://news.like.naver.com/v1/search/contents?suppress_response_codes=true&callback={}&q={}&isDuplication=false&_={}'.format(
-        jquery['jsonp_key'], q, jquery['nonce'])
-    response = get(url)
-    parsed = response.json()
-    raise NotImplemented
+        oid = link_parameters['oid'][0]
+        aid = link_parameters['aid'][0]
+        uid = get_article_uid(oid, aid)
+
+        comments_count = await get_comments_count(oid, aid)
+        await self.save_comments_count_history(uid, comments_count)
+
+        news_article = parse_ranking_read(uid, comments_count, article.text, oid, aid)
+        await self.save_article(news_article)
+
+        logger.info('| Current rankingRead : {}'.format(news_article))
+        await get_comments(self.category, self.date, oid, aid, comment_templates[self.category],
+                           self.save_comments)
 
 
 async def get_comments_count(oid, aid):
@@ -137,36 +118,42 @@ async def get_ranking_list(category, date):
 
 
 def parse_child_comment_list(child_comment_list):
-    return list(map(lambda comment: {
-        'uid': comment['commentNo'],
-        'parent_uid': comment['parentCommentNo'],
-        'user_id': comment['userIdNo'],
-        'username': comment['maskedUserId'],
-        'nickname': comment['maskedUserName'],
-        'content': comment['contents'],
-        'like_count': comment['sympathyCount'],
-        'dislike_count': comment['antipathyCount'],
-        'registered_at': comment['regTime'],
-        'modified_at': comment['modTime'],
-    }, child_comment_list))
+    try:
+        return list(map(lambda comment: {
+            'uid': comment['commentNo'],
+            'parent_uid': comment['parentCommentNo'],
+            'user_id': comment['userIdNo'],
+            'username': comment['maskedUserId'],
+            'nickname': comment['maskedUserName'],
+            'content': comment['contents'],
+            'like_count': comment['sympathyCount'],
+            'dislike_count': comment['antipathyCount'],
+            'registered_at': comment['regTime'],
+            'modified_at': comment['modTime'],
+        }, child_comment_list))
+    except:
+        raise ParseResponseError
 
 
 def parse_comment_list(comment_list):
-    return list(map(lambda comment: {
-        'uid': comment['commentNo'],
-        'user_id': comment['userIdNo'],
-        'username': comment['maskedUserId'],
-        'nickname': comment['maskedUserName'],
-        'content': comment['contents'],
-        'reply_count': comment['replyCount'],
-        'like_count': comment['sympathyCount'],
-        'dislike_count': comment['antipathyCount'],
-        'registered_at': comment['regTime'],
-        'modified_at': comment['modTime'],
-    }, comment_list))
+    try:
+        return list(map(lambda comment: {
+            'uid': comment['commentNo'],
+            'user_id': comment['userIdNo'],
+            'username': comment['maskedUserId'],
+            'nickname': comment['maskedUserName'],
+            'content': comment['contents'],
+            'reply_count': comment['replyCount'],
+            'like_count': comment['sympathyCount'],
+            'dislike_count': comment['antipathyCount'],
+            'registered_at': comment['regTime'],
+            'modified_at': comment['modTime'],
+        }, comment_list))
+    except:
+        raise ParseResponseError
 
 
-async def request_comment_list(category, date, url, oid, aid):
+async def _request_comment_list(category, date, url, oid, aid):
     response = await get(
         url,
         headers={
@@ -181,64 +168,96 @@ async def request_comment_list(category, date, url, oid, aid):
     return parsed_response, has_next_page
 
 
-async def get_more_comments(category, date, oid, aid, page, template, last, first):
+async def _get_comments(category, date, oid, aid, template, parsed_response):
+    parsed_comment_list = parse_comment_list(parsed_response['result']['commentList'])
+    has_replies = list(filter(lambda comment: int(comment['reply_count']) > 0, parsed_comment_list))
+    for comment in has_replies:
+        child_comments = await get_child_comments(category, date, oid, aid, template, comment)
+        comment['children'] = child_comments
+    return parsed_comment_list
+
+
+async def get_first_page_comments(category, date, oid, aid, template, save_callback):
+    logger.info('| Reading {},{}\'s comments first page...'.format(oid, aid))
+
     jquery = generate_jquery_jsonp_nonce()
-    url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&page={}&refresh=false&sort=NEW&current={}&prev={}&includeAllStatus=true&_={}'.format(
-            NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, page, last, first, jquery['nonce'])
-    return await request_comment_list(category, date, url, oid, aid)
+    url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&page=1&initialize=true&userType=&useAltSort=true&replyPageSize=20&moveTo=&sort=new&includeAllStatus=true&_={}'.format(
+        NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, jquery['nonce']
+    )
+
+    parsed_response, has_next_page = await _request_comment_list(category, date, url, oid, aid)
+    total_pages = parsed_response['result']['pageModel']['totalPages']
+    parsed_comment_list = await _get_comments(category, date, oid, aid, template, parsed_response)
+
+    await save_callback(get_article_uid(oid, aid), parsed_comment_list)
+    return parsed_comment_list, total_pages
 
 
-async def get_more_child_comments(category, date, oid, aid, parent, page, template, last):
+async def get_more_page_comments(category, date, oid, aid, template, page, save_callback):
+    logger.info('| Reading {},{}\'s comments {} page...'.format(oid, aid, page))
     jquery = generate_jquery_jsonp_nonce()
-    url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&parentCommentNo={}&page={}&userType=&includeAllStatus=true&moreType=next&current={}&_={}'.format(
-            NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, parent, page, last, jquery['nonce'])
-    return await request_comment_list(category, date, url, oid, aid)
+    url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&page={}&refresh=false&sort=NEW&includeAllStatus=true&_={}'.format(
+            NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, page, jquery['nonce'])
+    parsed_response, has_next_page = await _request_comment_list(category, date, url, oid, aid)
+
+    parsed_comment_list = await _get_comments(category, date, oid, aid, template, parsed_response)
+    await save_callback(get_article_uid(oid, aid), parsed_comment_list)
+    return parsed_comment_list
 
 
-async def get_child_comments(category, date, oid, aid, parent, template):
+async def get_first_page_child_comments(category, date, oid, aid, parent, template):
+    logger.info(
+        '| Reading {},{}\'s {}\'s child comments first page ...'.format(oid, aid, parent))
     jquery = generate_jquery_jsonp_nonce()
     url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&parentCommentNo={}&page=1&userType=&includeAllStatus=true&moreType=next&_={}'.format(
             NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, parent, jquery['nonce'])
-    return await request_comment_list(category, date, url, oid, aid)
+    parsed_child_response, has_child_next_page = await _request_comment_list(category, date, url, oid, aid)
+
+    total_pages = parsed_child_response['result']['pageModel']['totalPages']
+    parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
+    logger.info('| Parsed child commentlist : {}'.format(parsed_child_comment_list))
+    return parsed_child_comment_list, total_pages
 
 
-async def get_comments(category, date, oid, aid, template, page=1):
+async def get_more_page_child_comments(category, date, oid, aid, parent, template, page):
+    logger.info(
+        '| Reading {},{}\'s {}\'s child comments {} page ...'.format(oid, aid, parent, page))
+
     jquery = generate_jquery_jsonp_nonce()
-    url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&page={}&initialize=true&userType=&useAltSort=true&replyPageSize=20&moveTo=&sort=new&includeAllStatus=true&_={}'.format(
-            NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, page, jquery['nonce']
-        )
-    parsed_response, has_next_page = await request_comment_list(category, date, url, oid, aid)
-    comments = []
-    current, prev = '', ''
+    url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&parentCommentNo={}&page={}&userType=&includeAllStatus=true&moreType=next&_={}'.format(
+            NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, parent, page, jquery['nonce'])
+    parsed_child_response, has_child_next_page = await _request_comment_list(category, date, url, oid, aid)
 
-    if page > 1:
-        parsed_response, has_next_page = await get_more_comments(category, date, oid, aid, page, template,
-                                                           current, prev)
-    logger.info('| Reading {},{}\'s comments {} page...'.format(oid, aid, page))
-    parsed_comment_list = parse_comment_list(parsed_response['result']['commentList'])
-    logger.info('| Parsed commentlist : {}'.format(parsed_comment_list))
-    has_replies = list(filter(lambda comment: int(comment['reply_count']) > 0, parsed_comment_list))
-    for comment in has_replies:
-        child_page = 1
-        parsed_child_response, has_child_next_page = await get_child_comments(category, date, oid, aid, comment['uid'],
-                                                                        template)
-        child_current = ''
-        while True:
-            if child_page > 1:
-                parsed_child_response, has_child_next_page = await get_more_child_comments(category, date, oid, aid,
-                                                                                     comment['uid'], child_page,
-                                                                                     template, child_current)
-            logger.info(
-                '| Reading {},{}\'s {}\'s child comments {} page ...'.format(oid, aid, comment['uid'], child_page))
+    parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
+    logger.info('| Parsed child commentlist : {}'.format(parsed_child_comment_list))
+    return parsed_child_comment_list
 
-            parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
-            logger.info('| Parsed child commentlist : {}'.format(parsed_child_comment_list))
-            child_current = parsed_child_comment_list[-1]['uid']
-            if not has_child_next_page:
-                comment['children'] = parsed_child_comment_list
-                break
-            child_page += 1
-    comments.extend(parsed_comment_list)
-    current, prev = parsed_comment_list[-1]['uid'], parsed_comment_list[0]['uid']
 
-    return comments, has_next_page
+async def get_child_comments(category, date, oid, aid, template, comment):
+    child_comments, child_end_page = await get_first_page_child_comments(category, date, oid, aid,
+                                                                         comment['uid'], template)
+    futures = [asyncio.ensure_future(get_more_page_child_comments(category, date, oid, aid,
+                                                                  comment['uid'], template, page))
+               for page in range(2, child_end_page)]
+    parsed_child_comment_lists = await asyncio.gather(*futures)
+
+    more_child_comments = [parsed_child_comments for parsed_child_comment_list in parsed_child_comment_lists
+                           for parsed_child_comments in parsed_child_comment_list]
+    child_comments.extend(more_child_comments)
+    return child_comments
+
+
+async def get_comments(category, date, oid, aid, template, save_callback):
+    comments, end_page = await get_first_page_comments(category, date, oid, aid,
+                                                       template, save_callback)
+
+    futures = [asyncio.ensure_future(get_more_page_comments(category, date, oid, aid,
+                               template, page, save_callback))
+               for page in range(2, end_page)]
+    parsed_comment_lists = await asyncio.gather(*futures)
+
+    more_comments = [parsed_comments for parsed_comment_list in parsed_comment_lists
+             for parsed_comments in parsed_comment_list]
+    comments.extend(more_comments)
+
+    return comments
