@@ -12,7 +12,7 @@ TIMEOUT = 5
 MIN_PROXY_COUNT = 3
 
 PYTHONPATH = os.getenv("PYTHONPATH")
-PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs'.format(PYTHONPATH)
+PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs_arm'.format(PYTHONPATH)
 
 
 # def from_proxy_lists():
