@@ -14,15 +14,12 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-MAX_RETRIES = 10
-REQUEST_TIMEOUT = 15
+MAX_RETRIES = 15
+REQUEST_TIMEOUT = 10
 
 
-ERROR_LIMIT = 10
-
-
-MIN_HUMAN_LKE_TIME = 1.5
-MAX_HUMAN_LIKE_TIME = 1.5
+MIN_HUMAN_LKE_TIME = 2
+MAX_HUMAN_LIKE_TIME = 3
 
 waiting_time = random.uniform(MIN_HUMAN_LKE_TIME, MAX_HUMAN_LIKE_TIME)
 
