@@ -1,7 +1,6 @@
-import six, abc, datetime, functools
-from greatagain_parser_naver import loop
+import six, abc, datetime
 from abc import abstractmethod
-from pymongo import MongoClient
+import motor.motor_asyncio
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -22,7 +21,7 @@ class Repository(object):
 
 class MongoRepository(Repository):
     def __init__(self, uri, database_name):
-        self.connection = MongoClient(uri)
+        self.connection = motor.motor_asyncio.AsyncIOMotorClient(uri)
         self.database = self.connection.get_database(database_name)
 
         self.articles = self.database.get_collection('articles')
@@ -30,19 +29,20 @@ class MongoRepository(Repository):
         self.comments = self.database.get_collection('comments')
 
     async def save_comments_count_history(self, article_uid, comments_count):
-        await loop.run_in_executor(None, functools.partial(self.comments_count_histories.insert_one, {
+        document = {
             'article_uid': article_uid,
             'comments_count': comments_count,
             'created_at': datetime.datetime.now(),
-        }))
+        }
+
+        await self.comments_count_histories.insert_one(document)
 
 
     async def save_article(self, article):
-        await loop.run_in_executor(None, functools.partial(
-            self.articles.update_one, {'uid': article['uid']},
-                                     {'$set': article},
-                                     upsert=True)
-        )
+        where = {'uid': article['uid']}
+        operation = {'$set': article}
+
+        await self.articles.update_one(where, operation, upsert=True)
 
 
     async def save_comments(self, article_uid, comment_list):
@@ -51,9 +51,9 @@ class MongoRepository(Repository):
             return comment
 
         converted_comments = list(map(lambda comment: convert_comment(comment), comment_list))
+
         for comment in converted_comments:
-            await loop.run_in_executor(None, functools.partial(
-                self.comments.update_one, {'uid': comment['uid']},
-                                         {'$set': comment},
-                                         upsert=True)
-            )
+            where = {'uid': comment['uid']}
+            operation = {'$set': comment}
+
+            await self.comments.update_one(where, operation, upsert=True)

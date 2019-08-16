@@ -6,3 +6,4 @@ six
 selenium
 dnspython
 raven
+motor
