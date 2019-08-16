@@ -24,7 +24,9 @@ if __name__ == '__main__':
 
     categories = [
         NAVER_NEWS_CATEGORY_POLITICS,
+        NAVER_NEWS_CATEGORY_ECONOMY,
         NAVER_NEWS_CATEGORY_SOCIAL,
+        NAVER_NEWS_CATEGORY_WORLD,
     ]
 
     date = datetime.datetime.today().strftime('%Y%m%d')
