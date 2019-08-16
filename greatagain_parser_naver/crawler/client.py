@@ -94,11 +94,11 @@ async def request(prepped_request):
                                                                             'https': selected_proxy,
                                                                         },
                                                                       timeout=REQUEST_TIMEOUT))
-        # hang_like_human()
+        await hang_like_human()
         return response
     except (ConnectionError, ProxyError, ReadTimeout) as e:
         logger.info('Occurred an ConnectionError {}!'.format(e))
-        # hang_like_human(MAX_HUMAN_LIKE_TIME)
+        await hang_like_human(MAX_HUMAN_LIKE_TIME)
 
         refresh_proxies(selected_proxy)
         return await request(prepped_request)
@@ -114,8 +114,9 @@ async def post(url, **kwargs):
     return await request(prepped)
 
 
-def hang_like_human(addition_time=0.0):
+async def hang_like_human(addition_time=0.0):
     waiting_time = random.uniform(MIN_HUMAN_LKE_TIME, MAX_HUMAN_LIKE_TIME)
     waiting_time += addition_time
     logger.info('| Waiting for {} seconds...'.format(waiting_time))
-    time.sleep(waiting_time)
+
+    await asyncio.sleep(waiting_time)
