@@ -13,6 +13,8 @@ from greatagain_parser_naver import loop
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+
 
 MAX_RETRIES = 15
 REQUEST_TIMEOUT = 10
