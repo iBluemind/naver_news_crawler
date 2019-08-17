@@ -69,11 +69,13 @@ async def request(method: str, url: str, headers: Optional[dict] = None,
 
     global PROXIES
 
-    async with request_lock:
-        if not PROXIES:
-            proxies = await get_proxies()
-            logger.info('The proxies are used: {}'.format(proxies))
-            PROXIES = cycle(proxies)
+    if not PROXIES:
+        async with request_lock:
+            # Double check for performance
+            if not PROXIES:
+                proxies = await get_proxies()
+                logger.info('The proxies are used: {}'.format(proxies))
+                PROXIES = cycle(proxies)
 
     selected_proxy = next(PROXIES)
 
