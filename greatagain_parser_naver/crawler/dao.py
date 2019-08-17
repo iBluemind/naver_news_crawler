@@ -37,7 +37,7 @@ class MongoRepository(Repository):
         self.comments = self.database.get_collection('comments')
 
     async def save_comments_count_history(self, comments_count_history: CommentsCountHistory):
-        logger.info('Insert {}\'s CommentCountHistory'.format(comments_count_history.article_uid))
+        logger.debug('Insert {}\'s CommentCountHistory'.format(comments_count_history.article_uid))
         await self.comments_count_histories.insert_one(comments_count_history.__dict__)
 
 
@@ -45,7 +45,7 @@ class MongoRepository(Repository):
         where = {'uid': article.uid}
         operation = {'$set': article.__dict__}
 
-        logger.info('Update Article {}'.format(article.uid))
+        logger.debug('Update Article {}'.format(article.uid))
         await self.articles.update_one(where, operation, upsert=True)
 
 
@@ -67,7 +67,7 @@ class MongoRepository(Repository):
 
             operation = {'$set': serialized_comment}
 
-            logger.info('Update Comment {}'.format(comment.uid))
+            logger.debug('Update Comment {}'.format(comment.uid))
             await self.comments.update_one(where, operation, upsert=True)
 
     def close(self):
