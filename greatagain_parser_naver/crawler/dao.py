@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 
-import six, abc, datetime
+import six, abc, datetime, logging
 import motor.motor_asyncio
 from abc import abstractmethod
 from greatagain_parser_naver.parser.model import Comment, Article
 from typing import List
+
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -39,6 +43,7 @@ class MongoRepository(Repository):
             'created_at': datetime.datetime.now(),
         }
 
+        logger.info('Insert {}\'s CommentCountHistory'.format(article_uid))
         await self.comments_count_histories.insert_one(document)
 
 
@@ -46,6 +51,7 @@ class MongoRepository(Repository):
         where = {'uid': article.uid}
         operation = {'$set': article.__dict__}
 
+        logger.info('Update Article {}'.format(article.uid))
         await self.articles.update_one(where, operation, upsert=True)
 
 
@@ -67,6 +73,7 @@ class MongoRepository(Repository):
 
             operation = {'$set': serialized_comment}
 
+            logger.info('Update Comment {}'.format(comment.uid))
             await self.comments.update_one(where, operation, upsert=True)
 
     def close(self):
