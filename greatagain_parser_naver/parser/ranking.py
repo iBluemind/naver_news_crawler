@@ -80,6 +80,7 @@ class RankingNewsParser(Parser):
 
         news_article = parse_ranking_read(uid, comments_count, article, oid, aid)
         await self.save_article(news_article)
+        await client.hang_like_human()
 
         logger.info('| Current rankingRead : {}'.format(news_article))
         await get_comments(self.category, self.date, oid, aid,
@@ -128,6 +129,8 @@ async def get_ranking_list(category: int, date: str):
     for link in list(map(lambda x: x.get('href'), links)):
         ranking_read_request = await get('{}{}'.format(NAVER_NEWS_MOBILE_HOST, link))
         ranking_read = await ranking_read_request.text()
+
+        await client.hang_like_human()
 
         yield link, ranking_read
 
@@ -228,6 +231,9 @@ async def get_more_page_comments(category: int, date: str, oid: str, aid: str, t
 
     parsed_comment_list = await _get_comments(category, date, oid, aid, template, parsed_response)
     await save_callback(get_article_uid(oid, aid), parsed_comment_list)
+
+    await client.hang_like_human()
+
     return parsed_comment_list
 
 
@@ -258,6 +264,9 @@ async def get_more_page_child_comments(category: int, date: str, oid: str, aid: 
 
     parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
     logger.info('| Parsed child commentlist : {}'.format(parsed_child_comment_list))
+
+    await client.hang_like_human()
+
     return parsed_child_comment_list
 
 
@@ -265,6 +274,9 @@ async def get_child_comments(category: int, date: str, oid: str, aid: str, templ
         -> List[ChildComment]:
     child_comments, child_end_page = await get_first_page_child_comments(category, date, oid, aid,
                                                                          comment.uid, template)
+
+    await client.hang_like_human()
+
     futures = [asyncio.create_task(get_more_page_child_comments(category, date, oid, aid,
                                                                   comment.uid, template, page))
                for page in range(2, child_end_page)]
@@ -279,6 +291,8 @@ async def get_child_comments(category: int, date: str, oid: str, aid: str, templ
 async def get_comments(category: int, date: str, oid: str, aid: str, template: str, save_callback):
     comments, end_page = await get_first_page_comments(category, date, oid, aid,
                                                        template, save_callback)
+
+    await client.hang_like_human()
 
     futures = [asyncio.create_task(get_more_page_comments(category, date, oid, aid,
                                template, page, save_callback))

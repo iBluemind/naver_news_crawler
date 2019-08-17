@@ -93,8 +93,6 @@ async def request(method: str, url: str, headers: Optional[dict] = None,
 
         await response.read()
 
-        await hang_like_human()
-
         return response
     except (ConnectionError, aiohttp.ClientError) as e:
         logger.info('Occurred an ConnectionError {}!'.format(e))
