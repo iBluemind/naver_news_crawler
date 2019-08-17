@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from datetime import datetime
 from typing import Optional
 
 
@@ -34,6 +35,7 @@ class Comment:
     registered_at: str
     modified_at: str
     children: list
+    article_uid: str
 
     def __init__(self, uid, user_id, username,
                  nickname, content, reply_count,
@@ -72,3 +74,13 @@ class ChildComment(Comment):
         )
 
         self.parent_uid = parent_uid
+
+class CommentsCountHistory:
+    article_uid: str
+    comments_count: int
+    created_at: datetime
+
+    def __init__(self, article_uid, comments_count):
+        self.article_uid = article_uid
+        self.comments_count = comments_count
+        self.created_at = datetime.now()

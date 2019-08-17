@@ -23,7 +23,7 @@ from typing import List, Tuple
 from greatagain_parser_naver.crawler.client import get, post
 from greatagain_parser_naver.crawler.utils import parse_jquery_jsonp, generate_jquery_jsonp_nonce
 from greatagain_parser_naver.parser.exceptions import ParseResponseError
-from greatagain_parser_naver.parser.model import Article, ChildComment, Comment
+from greatagain_parser_naver.parser.model import Article, ChildComment, Comment, CommentsCountHistory
 from greatagain_parser_naver.parser.parser import Parser
 
 logging.basicConfig(level=logging.DEBUG)
@@ -71,7 +71,12 @@ class RankingNewsParser(Parser):
         uid = get_article_uid(oid, aid)
 
         comments_count = await get_comments_count(oid, aid)
-        await self.save_comments_count_history(uid, comments_count)
+        await self.save_comments_count_history(
+            CommentsCountHistory(
+                article_uid=uid,
+                comments_count=comments_count,
+            )
+        )
 
         news_article = parse_ranking_read(uid, comments_count, article, oid, aid)
         await self.save_article(news_article)

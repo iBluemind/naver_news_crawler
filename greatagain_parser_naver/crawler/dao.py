@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import six, abc, datetime, logging
+import six, abc, logging
 import motor.motor_asyncio
 from abc import abstractmethod
-from greatagain_parser_naver.parser.model import Comment, Article
+from greatagain_parser_naver.parser.model import Comment, Article, CommentsCountHistory
 from typing import List
 
 
@@ -15,15 +15,15 @@ logger = logging.getLogger(__name__)
 class Repository(object):
 
     @abstractmethod
-    async def save_comments_count_history(self, article_uid, comments_count):
+    async def save_comments_count_history(self, comments_count_history: CommentsCountHistory):
         raise NotImplementedError
 
     @abstractmethod
-    async def save_article(self, article):
+    async def save_article(self, article: Article):
         raise NotImplementedError
 
     @abstractmethod
-    async def save_comments(self, article_uid, comment_list):
+    async def save_comments(self, article_uid: str, comment_list: List[Comment]):
         raise NotImplementedError
 
 
@@ -36,15 +36,9 @@ class MongoRepository(Repository):
         self.comments_count_histories = self.database.get_collection('comments_count_histories')
         self.comments = self.database.get_collection('comments')
 
-    async def save_comments_count_history(self, article_uid: str, comments_count: int):
-        document = {
-            'article_uid': article_uid,
-            'comments_count': comments_count,
-            'created_at': datetime.datetime.now(),
-        }
-
-        logger.info('Insert {}\'s CommentCountHistory'.format(article_uid))
-        await self.comments_count_histories.insert_one(document)
+    async def save_comments_count_history(self, comments_count_history: CommentsCountHistory):
+        logger.info('Insert {}\'s CommentCountHistory'.format(comments_count_history.article_uid))
+        await self.comments_count_histories.insert_one(comments_count_history.__dict__)
 
 
     async def save_article(self, article: Article):
