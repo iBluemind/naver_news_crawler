@@ -5,7 +5,7 @@
 
 import logging, datetime, asyncio
 from config import DATABASE_URI, DATABASE_NAME
-from greatagain_parser_naver import loop
+from greatagain_parser_naver.crawler.client import session
 from greatagain_parser_naver.crawler.dao import MongoRepository
 from greatagain_parser_naver.parser.ranking import RankingNewsParser, NAVER_NEWS_CATEGORY_POLITICS, \
     NAVER_NEWS_CATEGORY_ECONOMY, \
@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-if __name__ == '__main__':
+async def main():
     repository = MongoRepository(DATABASE_URI, DATABASE_NAME)
 
     categories = [
@@ -32,7 +32,17 @@ if __name__ == '__main__':
     date = datetime.datetime.today().strftime('%Y%m%d')
     ranking_news_parser = RankingNewsParser(repository)
 
-    futures = [asyncio.ensure_future(ranking_news_parser.run(category, date)) for category in categories]
-    loop.run_until_complete(asyncio.gather(*futures))
+    futures = [asyncio.create_task(ranking_news_parser.run(category, date)) for category in categories]
 
-    loop.close()
+    try:
+        await asyncio.gather(*futures)
+    finally:
+        await ranking_news_parser.close()
+
+
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.close()

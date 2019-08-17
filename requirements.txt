@@ -1,5 +1,4 @@
 beautifulsoup4
-requests
 lxml
 pymongo
 six
@@ -7,3 +6,5 @@ selenium
 dnspython
 raven
 motor
+aiohttp
+tenacity

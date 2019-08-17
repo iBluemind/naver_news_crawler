@@ -3,7 +3,7 @@
 import random, time, json
 
 
-def generate_jquery_jsonp_nonce():
+def generate_jquery_jsonp_nonce() -> dict:
     expando = ('jQuery{}{}'.format('1.7', random.random())).replace('.', '')
     nonce = int(round(time.time() * 1000))
     return {
@@ -13,7 +13,7 @@ def generate_jquery_jsonp_nonce():
     }
 
 
-def parse_jquery_jsonp(response):
-    parsed_response = response.text[response.text.index("(") + 1:response.text.rindex(")")]
+def parse_jquery_jsonp(response: str) -> dict:
+    parsed_response = response[response.index("(") + 1:response.rindex(")")]
     joined_response = " ".join(parsed_response.splitlines())
     return json.loads(joined_response)

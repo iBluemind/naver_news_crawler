@@ -1,31 +1,24 @@
 # -*- coding: utf-8 -*-
 
-import requests, random, time, logging, asyncio, functools
-from requests.adapters import HTTPAdapter
-from requests.exceptions import ConnectionError, ProxyError, ReadTimeout
-from requests import Request
-# from config import PROXIES
+import aiohttp
+import random, logging, asyncio
 from .proxy import get_proxies
 from itertools import cycle
-from greatagain_parser_naver import loop
+from tenacity import retry, wait_random_exponential, stop_after_attempt, before_log
+from typing import Optional
 
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-
-
 MAX_RETRIES = 15
 REQUEST_TIMEOUT = 10
-
-
 MIN_HUMAN_LKE_TIME = 2
 MAX_HUMAN_LIKE_TIME = 3
 
-waiting_time = random.uniform(MIN_HUMAN_LKE_TIME, MAX_HUMAN_LIKE_TIME)
+PROXIES: cycle = None
 
-
+waiting_time: float = random.uniform(MIN_HUMAN_LKE_TIME, MAX_HUMAN_LIKE_TIME)
 user_agent_strings = [
 'Mozilla/5.0 (Linux; Android 6.0.1; SAMSUNG SM-G930T1 Build/MMB29M) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/4.0 Chrome/44.0.2403.133 Mobile Safari/537.36',
 'Mozilla/5.0 (Linux; Android 7.0; SM-G892A Build/NRD90M; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/60.0.3112.107 Mobile Safari/537.36 NAVER(inapp; search; 590; 8.8.3)',
@@ -44,23 +37,16 @@ user_agent_strings = [
 'Mozilla/5.0 (Apple-iPhone7C2/1202.466; U; CPU like Mac OS X; ko) AppleWebKit/420+ (KHTML, like Gecko) Mobile/1A543 NAVER(inapp; search; 590; 8.8.5; 8)'
 ]
 
-
-def get_random_user_agent():
+def get_random_user_agent() -> str:
     return random.choice(user_agent_strings)
 
+session = aiohttp.ClientSession(
+    headers={'User-Agent': get_random_user_agent()}
+)
 
-session = requests.Session()
-session.headers.update({'User-Agent': get_random_user_agent()})
-session.mount('https://', HTTPAdapter(max_retries=MAX_RETRIES))
-session.mount('http://', HTTPAdapter(max_retries=MAX_RETRIES))
-
-
-proxies = loop.run_until_complete(get_proxies())
-PROXIES = cycle(proxies)
-
-
-def refresh_proxies(must_be_deleted_proxy):
-    global proxies, PROXIES
+async def refresh_proxies(must_be_deleted_proxy: str):
+    global PROXIES
+    proxies = []
     try:
         proxies.remove(must_be_deleted_proxy)
     except KeyError as e:
@@ -68,51 +54,61 @@ def refresh_proxies(must_be_deleted_proxy):
         pass
     from .proxy import MIN_PROXY_COUNT
     if len(proxies) < MIN_PROXY_COUNT:
-        proxies = loop.run_until_complete(get_proxies())
-    PROXIES = cycle(proxies)
+        proxies = await get_proxies()
 
+    async with request_lock:
+        PROXIES = cycle(proxies)
 
-def pick_proxies():
-    return next(PROXIES)
+request_lock = asyncio.Lock()
 
+@retry(wait=wait_random_exponential(multiplier=1, max=MAX_HUMAN_LIKE_TIME),
+       stop=stop_after_attempt(MAX_RETRIES),
+       before=before_log(logger, logging.DEBUG))
+async def request(method: str, url: str, headers: Optional[dict] = None,
+                  **kwargs) -> aiohttp.ClientResponse:
 
-def make_request(method, url, **kwargs):
-    request = Request(method, url, **kwargs)
-    prepped = session.prepare_request(request)
-    prepped.headers['User-Agent'] = get_random_user_agent()
-    return prepped
+    global PROXIES
 
+    async with request_lock:
+        if not PROXIES:
+            proxies = await get_proxies()
+            logger.info('The proxies are used: {}'.format(proxies))
+            PROXIES = cycle(proxies)
 
-async def request(prepped_request):
-    selected_proxy = pick_proxies()
+    selected_proxy = next(PROXIES)
+
+    if headers:
+        headers.update({
+        'User-Agent': get_random_user_agent()
+    })
 
     try:
-        response = await loop.run_in_executor(None, functools.partial(session.send,
-                                                                      prepped_request,
-                                                                      proxies={
-                                                                            'http': selected_proxy,
-                                                                            'https': selected_proxy,
-                                                                        },
-                                                                      timeout=REQUEST_TIMEOUT))
+        response = await session.request(method, url,
+                                         headers=headers,
+                                         timeout=REQUEST_TIMEOUT,
+                                         proxy=selected_proxy,
+                                         **kwargs)
+
+        await response.read()
+
         await hang_like_human()
+
         return response
-    except (ConnectionError, ProxyError, ReadTimeout) as e:
+    except (ConnectionError, aiohttp.ClientError) as e:
         logger.info('Occurred an ConnectionError {}!'.format(e))
-        await hang_like_human(MAX_HUMAN_LIKE_TIME)
 
-        refresh_proxies(selected_proxy)
-        return await request(prepped_request)
+        await refresh_proxies(selected_proxy)
+        raise e
 
+async def get(url: str, **kwargs) -> aiohttp.ClientResponse:
+    return await request('GET', url, **kwargs)
 
-async def get(url, **kwargs):
-    prepped = make_request('GET', url, **kwargs)
-    return await request(prepped)
+async def post(url: str, **kwargs) -> aiohttp.ClientResponse:
+    return await request('POST', url, **kwargs)
 
-
-async def post(url, **kwargs):
-    prepped = make_request('POST', url, **kwargs)
-    return await request(prepped)
-
+async def close():
+    if not session.closed:
+        await session.close()
 
 async def hang_like_human(addition_time=0.0):
     waiting_time = random.uniform(MIN_HUMAN_LKE_TIME, MAX_HUMAN_LIKE_TIME)

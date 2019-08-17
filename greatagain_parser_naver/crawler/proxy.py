@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import requests, logging, time, re, os, asyncio, functools
+import logging, time, re, os, asyncio, aiohttp
 from selenium import webdriver
-from greatagain_parser_naver import loop
-from requests.exceptions import ConnectTimeout, ProxyError, SSLError, ConnectionError, ReadTimeout, ChunkedEncodingError
+from typing import Optional
 
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko'
@@ -12,14 +11,14 @@ TIMEOUT = 5
 MIN_PROXY_COUNT = 3
 
 PYTHONPATH = os.getenv("PYTHONPATH")
-PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs_arm'.format(PYTHONPATH)
+PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs_mac'.format(PYTHONPATH)
 
 
 # def from_proxy_lists():
 #     url = 'http://www.proxylists.net/jp_0_ext.html'
 
 
-def from_hide_my_ip():
+async def from_hide_my_ip() -> list:
     """
     From "https://www.hide-my-ip.com/proxylist.shtml"
     :return:
@@ -37,7 +36,7 @@ def from_hide_my_ip():
     return proxies
 
 
-def from_cyber_syndrome():
+async def from_cyber_syndrome() -> list:
     """
     From "http://www.cybersyndrome.net/"
     :return:
@@ -58,7 +57,7 @@ def from_cyber_syndrome():
     return proxies
 
 
-def from_free_proxy_list():
+async def from_free_proxy_list() -> list:
     """
     From "http://free-proxy-list.net/"
     :return:
@@ -70,30 +69,39 @@ def from_free_proxy_list():
     proxies = []
 
     for url in urls:
-        time.sleep(0.5)
-        res = requests.get(url)
-        data = re.findall('<tr><td>(\d+\.\d+\.\d+\.\d+)</td><td>(\d+)</td>', res.text)
-        proxies += ['{:s}:{:s}'.format(host, port) for (host, port) in data]
+        await asyncio.sleep(0.5)
+
+        async with aiohttp.ClientSession() as session:
+            res = await session.get(url)
+            data = re.findall('<tr><td>(\d+\.\d+\.\d+\.\d+)</td><td>(\d+)</td>', await res.text())
+            proxies += ['{:s}:{:s}'.format(host, port) for (host, port) in data]
+
     return proxies
 
 
-async def test_proxy(proxy):
+async def test_proxy(session: aiohttp.ClientSession, proxy: str) -> Optional[str]:
+    if not proxy.startswith('http://'):
+        proxy = 'http://{}'.format(proxy)
+
     headers = {
         'User-Agent': USER_AGENT
     }
 
     try:
-        await loop.run_in_executor(None, functools.partial(requests.get, "https://www.naver.com",
-                                                           headers=headers,
-                                                           timeout=(TIMEOUT, TIMEOUT),
-                                                           proxies={"http": proxy, "https": proxy}))
+        await session.get(
+            "https://www.naver.com",
+            headers=headers,
+            timeout=TIMEOUT,
+            proxy=proxy,
+            ssl=False
+        )
+
         return proxy
-    except (ChunkedEncodingError, ConnectTimeout, ProxyError, SSLError, ConnectionError, ReadTimeout) as e:
+    except Exception as e:
         logging.info("Skip proxy {} by {}".format(proxy, e))
-    return None
 
 
-async def get_proxies():
+async def get_proxies() -> set:
     proxies = set()
 
     functions = [
@@ -102,13 +110,15 @@ async def get_proxies():
     ]
 
     for func in functions:
-        proxy_list = func()
+        proxy_list = await func()
+
         logging.debug(proxy_list)
 
-        futures = [asyncio.ensure_future(test_proxy(proxy)) for proxy in proxy_list]
-        results = await asyncio.gather(*futures)
+        async with aiohttp.ClientSession() as session:
+            futures = [asyncio.create_task(test_proxy(session, proxy)) for proxy in proxy_list]
+            results = await asyncio.gather(*futures)
 
-        proxies.update(list(filter(lambda x: x is not None, results)))
+            proxies.update(list(filter(lambda x: x is not None, results)))
 
     if len(proxies) < MIN_PROXY_COUNT:
         logging.error('Available proxies count is NOT satisfied!' 
