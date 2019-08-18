@@ -7,7 +7,7 @@ from greatagain_parser_naver.parser.model import Comment, Article, CommentsCount
 from typing import List
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -40,14 +40,12 @@ class MongoRepository(Repository):
         logger.debug('Insert {}\'s CommentCountHistory'.format(comments_count_history.article_uid))
         await self.comments_count_histories.insert_one(comments_count_history.__dict__)
 
-
     async def save_article(self, article: Article):
         where = {'uid': article.uid}
         operation = {'$set': article.__dict__}
 
         logger.debug('Update Article {}'.format(article.uid))
         await self.articles.update_one(where, operation, upsert=True)
-
 
     async def save_comments(self, article_uid: str, comment_list: List[Comment]):
         def convert_comment(comment: Comment):

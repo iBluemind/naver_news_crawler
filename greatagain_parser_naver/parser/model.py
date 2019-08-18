@@ -10,6 +10,7 @@ class Article:
     content: str
     comments_count: int
     initialized_at: str
+    finalized_at: str
     url: str
 
     def __init__(self, uid, title, content,

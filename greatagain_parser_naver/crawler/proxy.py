@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import logging, time, re, os, asyncio, aiohttp
+import logging, re, os, asyncio, aiohttp
 from selenium import webdriver
 from typing import Optional
 
@@ -98,7 +98,8 @@ async def test_proxy(session: aiohttp.ClientSession, proxy: str) -> Optional[str
 
         return proxy
     except Exception as e:
-        logging.info("Skip proxy {} by {}".format(proxy, e))
+        logging.debug("Skip proxy {} by {}".format(proxy, e))
+        return None
 
 
 async def get_proxies() -> set:

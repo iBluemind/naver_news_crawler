@@ -2,3 +2,6 @@
 
 class ParseResponseError(RuntimeError):
     pass
+
+class RetryRequestError(RuntimeError):
+    pass

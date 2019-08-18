@@ -26,7 +26,7 @@ from greatagain_parser_naver.parser.exceptions import ParseResponseError
 from greatagain_parser_naver.parser.model import Article, ChildComment, Comment, CommentsCountHistory
 from greatagain_parser_naver.parser.parser import Parser
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -82,7 +82,7 @@ class RankingNewsParser(Parser):
         await self.save_article(news_article)
         await client.hang_like_human()
 
-        logger.info('| Current rankingRead : {}'.format(news_article))
+        logger.info('* Current rankingRead : {}'.format(news_article))
         await get_comments(self.category, self.date, oid, aid,
                            comment_templates[self.category], self.save_comments)
 
@@ -122,8 +122,9 @@ async def get_ranking_list(category: int, date: str):
 
     titles = soup.find_all(class_="commonlist_tx_headline")
 
-    logger.info('| Parsed Ranking list...')
-    [logger.info('{}: {}'.format(i, title)) for i, title in enumerate(list(map(lambda x: x.text, titles)))]
+    logger.info('* Parsed Ranking list...')
+    for i, title in enumerate(list(map(lambda x: x.text, titles))):
+        logger.info('{}: {}'.format(i, title))
 
     links = soup.select("ul.commonlist > li > a")
     for link in list(map(lambda x: x.get('href'), links)):
@@ -195,7 +196,7 @@ async def _get_comments(category: int, date: str, oid: str, aid: str,
                         template: str, parsed_response: dict) \
         -> List[Comment]:
     parsed_comment_list = parse_comment_list(parsed_response['result']['commentList'])
-    has_replies = list(filter(lambda comment: int(comment.reply_count) > 0, parsed_comment_list))
+    has_replies = list(filter(lambda comment: (comment.reply_count or 0) > 0, parsed_comment_list))
     for comment in has_replies:
         child_comments = await get_child_comments(category, date, oid, aid, template, comment)
         comment.children = child_comments
@@ -205,7 +206,7 @@ async def _get_comments(category: int, date: str, oid: str, aid: str,
 async def get_first_page_comments(category: int, date: str, oid: str, aid: str,
                                   template: str, save_callback)\
         -> Tuple[List[Comment], int]:
-    logger.info('| Reading {},{}\'s comments first page...'.format(oid, aid))
+    logger.info('* Reading {},{}\'s comments first page...'.format(oid, aid))
 
     jquery = generate_jquery_jsonp_nonce()
     url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&page=1&initialize=true&userType=&useAltSort=true&replyPageSize=20&moveTo=&sort=new&includeAllStatus=true&_={}'.format(
@@ -223,7 +224,7 @@ async def get_first_page_comments(category: int, date: str, oid: str, aid: str,
 async def get_more_page_comments(category: int, date: str, oid: str, aid: str, template: str,
                                  page: int, save_callback) \
         -> List[Comment]:
-    logger.info('| Reading {},{}\'s comments {} page...'.format(oid, aid, page))
+    logger.info('* Reading {},{}\'s comments {} page...'.format(oid, aid, page))
     jquery = generate_jquery_jsonp_nonce()
     url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&page={}&refresh=false&sort=NEW&includeAllStatus=true&_={}'.format(
             NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, page, jquery['nonce'])
@@ -240,7 +241,7 @@ async def get_more_page_comments(category: int, date: str, oid: str, aid: str, t
 async def get_first_page_child_comments(category: int, date: str, oid: str, aid: str, parent: str, template: str) \
         -> Tuple[List[ChildComment], int]:
     logger.info(
-        '| Reading {},{}\'s {}\'s child comments first page ...'.format(oid, aid, parent))
+        '* Reading {},{}\'s {}\'s child comments first page ...'.format(oid, aid, parent))
     jquery = generate_jquery_jsonp_nonce()
     url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&parentCommentNo={}&page=1&userType=&includeAllStatus=true&moreType=next&_={}'.format(
             NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, parent, jquery['nonce'])
@@ -248,14 +249,14 @@ async def get_first_page_child_comments(category: int, date: str, oid: str, aid:
 
     total_pages = parsed_child_response['result']['pageModel']['totalPages']
     parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
-    logger.info('| Parsed child commentlist : {}'.format(parsed_child_comment_list))
+    logger.debug('* Parsed child commentlist : {}'.format(parsed_child_comment_list))
     return parsed_child_comment_list, total_pages
 
 
 async def get_more_page_child_comments(category: int, date: str, oid: str, aid: str, parent: str,
                                        template: str, page:int) -> List[ChildComment]:
     logger.info(
-        '| Reading {},{}\'s {}\'s child comments {} page ...'.format(oid, aid, parent, page))
+        '* Reading {},{}\'s {}\'s child comments {} page ...'.format(oid, aid, parent, page))
 
     jquery = generate_jquery_jsonp_nonce()
     url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&parentCommentNo={}&page={}&userType=&includeAllStatus=true&moreType=next&_={}'.format(
@@ -263,7 +264,7 @@ async def get_more_page_child_comments(category: int, date: str, oid: str, aid: 
     parsed_child_response, has_child_next_page = await _request_comment_list(category, date, url, oid, aid)
 
     parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
-    logger.info('| Parsed child commentlist : {}'.format(parsed_child_comment_list))
+    logger.debug('* Parsed child commentlist : {}'.format(parsed_child_comment_list))
 
     await client.hang_like_human()
 

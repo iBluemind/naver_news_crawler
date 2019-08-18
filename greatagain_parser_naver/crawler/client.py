@@ -2,13 +2,14 @@
 
 import aiohttp
 import random, logging, asyncio
+from greatagain_parser_naver.parser.exceptions import RetryRequestError
 from .proxy import get_proxies
 from itertools import cycle
-from tenacity import retry, wait_random_exponential, stop_after_attempt, before_log
+from tenacity import retry, wait_random_exponential, stop_after_attempt, before_log, retry_if_exception_type
 from typing import Optional
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 15
@@ -16,7 +17,34 @@ REQUEST_TIMEOUT = 10
 MIN_HUMAN_LKE_TIME = 2
 MAX_HUMAN_LIKE_TIME = 3
 
-PROXIES: cycle = None
+class ProxyList(object):
+
+    @property
+    def origin(self):
+        return self._proxies
+
+    @origin.setter
+    def origin(self, new_value):
+        self._proxies = new_value
+        self._circular = cycle(self._proxies)
+
+    @property
+    def empty(self):
+        if hasattr(self, '_circular') and len(self._proxies) > 0:
+            return False
+        return True
+
+    def next(self):
+        if not hasattr(self, '_circular'):
+            raise Exception('Please set `origin` first!')
+        return next(self._circular)
+
+    def remove(self, value):
+        self._proxies.remove(value)
+        self._circular = cycle(self._proxies)
+
+
+PROXIES: ProxyList = ProxyList()
 
 waiting_time: float = random.uniform(MIN_HUMAN_LKE_TIME, MAX_HUMAN_LIKE_TIME)
 user_agent_strings = [
@@ -46,43 +74,41 @@ session = aiohttp.ClientSession(
 
 async def refresh_proxies(must_be_deleted_proxy: str):
     global PROXIES
-    proxies = []
-    try:
-        proxies.remove(must_be_deleted_proxy)
-    except KeyError as e:
-        logging.warning(e)
-        pass
-    from .proxy import MIN_PROXY_COUNT
-    if len(proxies) < MIN_PROXY_COUNT:
-        proxies = await get_proxies()
 
     async with request_lock:
-        PROXIES = cycle(proxies)
+        try:
+            PROXIES.remove(must_be_deleted_proxy)
+        except KeyError as e:
+            logging.warning(e)
+
+        if PROXIES.empty:
+            logging.error('Available proxies count is NOT satisfied!')
+            PROXIES.origin = await get_proxies()
+
 
 request_lock = asyncio.Lock()
 
 @retry(wait=wait_random_exponential(multiplier=1, max=MAX_HUMAN_LIKE_TIME),
        stop=stop_after_attempt(MAX_RETRIES),
-       before=before_log(logger, logging.DEBUG))
+       before=before_log(logger, logging.DEBUG),
+       retry=retry_if_exception_type(RetryRequestError))
 async def request(method: str, url: str, headers: Optional[dict] = None,
                   **kwargs) -> aiohttp.ClientResponse:
 
     global PROXIES
 
-    if not PROXIES:
-        async with request_lock:
-            # Double check for performance
-            if not PROXIES:
-                proxies = await get_proxies()
-                logger.info('The proxies are used: {}'.format(proxies))
-                PROXIES = cycle(proxies)
+    async with request_lock:
+        if PROXIES.empty:
+            logger.info('Searching proxy servers...')
+            PROXIES.origin = await get_proxies()
+            logger.info('The proxies will be used: {}'.format(PROXIES.origin))
 
-    selected_proxy = next(PROXIES)
+        selected_proxy = PROXIES.next()
 
     if headers:
         headers.update({
-        'User-Agent': get_random_user_agent()
-    })
+            'User-Agent': get_random_user_agent()
+        })
 
     try:
         response = await session.request(method, url,
@@ -94,11 +120,12 @@ async def request(method: str, url: str, headers: Optional[dict] = None,
         await response.read()
 
         return response
-    except (ConnectionError, aiohttp.ClientError) as e:
+    except (ConnectionError, aiohttp.ClientError,
+            aiohttp.ClientSSLError, asyncio.TimeoutError) as e:
         logger.info('Occurred an ConnectionError {}!'.format(e))
 
         await refresh_proxies(selected_proxy)
-        raise e
+        raise RetryRequestError
 
 async def get(url: str, **kwargs) -> aiohttp.ClientResponse:
     return await request('GET', url, **kwargs)
@@ -113,6 +140,6 @@ async def close():
 async def hang_like_human(addition_time=0.0):
     waiting_time = random.uniform(MIN_HUMAN_LKE_TIME, MAX_HUMAN_LIKE_TIME)
     waiting_time += addition_time
-    logger.info('| Waiting for {} seconds...'.format(waiting_time))
+    logger.debug('* Waiting for {} seconds...'.format(waiting_time))
 
     await asyncio.sleep(waiting_time)
