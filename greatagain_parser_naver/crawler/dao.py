@@ -3,7 +3,7 @@
 import six, abc, logging
 import motor.motor_asyncio
 from abc import abstractmethod
-from greatagain_parser_naver.parser.model import Comment, Article, CommentsCountHistory
+from greatagain_parser_naver.parser.model import Comment, Article, CommentsCountHistory, ArticleHistory
 from typing import List
 
 
@@ -33,6 +33,7 @@ class MongoRepository(Repository):
         self.database = self.connection.get_database(database_name)
 
         self.articles = self.database.get_collection('articles')
+        self.article_histories = self.database.get_collection('article_histories')
         self.comments_count_histories = self.database.get_collection('comments_count_histories')
         self.comments = self.database.get_collection('comments')
 
@@ -46,6 +47,10 @@ class MongoRepository(Repository):
 
         logger.debug('Update Article {}'.format(article.uid))
         await self.articles.update_one(where, operation, upsert=True)
+
+    async def save_article_history(self, article_history: ArticleHistory):
+        logger.debug('Insert {}\'s ArticleHistory'.format(article_history.article_uid))
+        await self.article_histories.insert_one(article_history.__dict__)
 
     async def save_comments(self, article_uid: str, comment_list: List[Comment]):
         def convert_comment(comment: Comment):
