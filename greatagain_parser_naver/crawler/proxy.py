@@ -14,8 +14,14 @@ PYTHONPATH = os.getenv("PYTHONPATH")
 PHANTOM_JS_DRIVER_PATH = '{}/bin/phantomjs_mac'.format(PYTHONPATH)
 
 
-# def from_proxy_lists():
-#     url = 'http://www.proxylists.net/jp_0_ext.html'
+async def from_proxy_lists():
+    url = 'http://www.proxylists.net/jp_0.html'
+    driver = webdriver.PhantomJS(PHANTOM_JS_DRIVER_PATH)
+    driver.implicitly_wait(3)
+    driver.get(url)
+
+    proxies = ['http://{}:{}'.format(host, port) for (host, port) in re.findall('</script>(\d+\.\d+\.\d+\.\d+)\n<noscript>Please enable javascript</noscript></td><td>(\d+)</td></tr>', driver.page_source)]
+    return proxies
 
 
 async def from_hide_my_ip() -> list:
@@ -28,12 +34,19 @@ async def from_hide_my_ip() -> list:
     driver.implicitly_wait(3)
     driver.get(url)
 
-    proxies = driver.execute_script("return json;")
-    logging.debug(proxies)
+    try:
+        data = driver.execute_script("return json;")
 
-    # data = re.findall('"i":"(\d+\.\d+\.\d+\.\d+)","p":"(\d+)"', res.text)
-    # proxies = ['{:s}:{:s}'.format(host, port) for (host, port) in data]
-    return proxies
+        # data = re.findall('"i":"(\d+\.\d+\.\d+\.\d+)","p":"(\d+)"', res.text)
+        # proxies = ['{:s}:{:s}'.format(host, port) for (host, port) in data]
+
+        proxies = ["{}://{}:{}".format(proxy['tp'], proxy['i'], proxy['p']) for proxy in data]
+
+        return proxies
+    except Exception as e:
+        logging.error(e)
+
+        return []
 
 
 async def from_cyber_syndrome() -> list:
@@ -53,7 +66,7 @@ async def from_cyber_syndrome() -> list:
     # logging.debug(res.text)
     # proxies += re.findall('(\d+\.\d+\.\d+\.\d+:\d+)', res.text)
 
-    proxies += re.findall('(\d+\.\d+\.\d+\.\d+:\d+)', driver.page_source)
+    proxies += ['http://{}'.format(ip) for ip in re.findall('(\d+\.\d+\.\d+\.\d+:\d+)', driver.page_source)]
     return proxies
 
 
@@ -63,8 +76,8 @@ async def from_free_proxy_list() -> list:
     :return:
     """
     urls = [
-        'https://free-proxy-list.net/',
-        # 'https://free-proxy-list.net/anonymous-proxy.html'
+        # 'https://free-proxy-list.net/',
+        'https://free-proxy-list.net/anonymous-proxy.html'
     ]
     proxies = []
 
@@ -73,28 +86,36 @@ async def from_free_proxy_list() -> list:
 
         async with aiohttp.ClientSession() as session:
             res = await session.get(url)
-            data = re.findall('<tr><td>(\d+\.\d+\.\d+\.\d+)</td><td>(\d+)</td>', await res.text())
-            proxies += ['{:s}:{:s}'.format(host, port) for (host, port) in data]
+
+            data = re.findall("<td>(\d+\.\d+\.\d+\.\d+)</td><td>(\d+)</td><td>(.*?)</td><td class='hm'>(.*?)</td><td>(.*?)</td><td class='hm'>(.*?)</td><td class='hx'>(.*?)</td><td class='hm'>(.*?)</td>",
+                                await res.text()
+                              )
+            proxies += [
+                'https://{:s}:{:s}'.format(host, port) if https == 'yes' else 'http://{:s}:{:s}'.format(host, port)
+                for (host, port, code, country, anonymity, google, https, last_checked) in data
+            ]
 
     return proxies
 
 
 async def test_proxy(session: aiohttp.ClientSession, proxy: str) -> Optional[str]:
-    if not proxy.startswith('http://'):
-        proxy = 'http://{}'.format(proxy)
+    # if not (proxy.startswith('http://') or proxy.startswith('https://')):
+    #     proxy = 'http://{}'.format(proxy)
 
     headers = {
         'User-Agent': USER_AGENT
     }
 
     try:
-        await session.get(
+        resp = await session.get(
             "https://www.naver.com",
             headers=headers,
             timeout=TIMEOUT,
             proxy=proxy,
             ssl=False
         )
+
+        await resp.read()
 
         return proxy
     except Exception as e:
@@ -106,6 +127,8 @@ async def get_proxies() -> set:
     proxies = set()
 
     functions = [
+        from_proxy_lists,
+        from_hide_my_ip,
         from_cyber_syndrome,
         from_free_proxy_list,
     ]
