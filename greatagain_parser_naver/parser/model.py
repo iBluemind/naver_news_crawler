@@ -10,7 +10,7 @@ class Article:
     content: str
     comments_count: int
     initialized_at: str
-    finalized_at: str
+    finalized_at: Optional[str]
     url: str
     press: str
     author: Optional[str]
@@ -67,12 +67,13 @@ class Comment:
     article_uid: str
     exposed: bool
     deleted: bool
+    opened: bool
 
     def __init__(self, uid, user_id, username,
                  nickname, content, reply_count,
                  like_count, dislike_count,
                  registered_at, modified_at,
-                 exposed, deleted):
+                 exposed, deleted, opened):
         self.uid = uid
         self.user_id = user_id
         self.username = username
@@ -85,6 +86,7 @@ class Comment:
         self.modified_at = modified_at
         self.exposed = exposed
         self.deleted = deleted
+        self.opened = opened
 
 
 class ChildComment(Comment):
@@ -93,7 +95,7 @@ class ChildComment(Comment):
     def __init__(self, uid, parent_uid, user_id,
                  username, nickname, content,
                  like_count, dislike_count, registered_at,
-                 modified_at, exposed, deleted):
+                 modified_at, exposed, deleted, opened):
         super(ChildComment, self).__init__(
             uid=uid,
             user_id=user_id,
@@ -106,7 +108,8 @@ class ChildComment(Comment):
             modified_at=modified_at,
             reply_count=None,
             exposed=exposed,
-            deleted=deleted
+            deleted=deleted,
+            opened=opened
         )
 
         self.parent_uid = parent_uid

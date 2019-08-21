@@ -289,6 +289,7 @@ def parse_child_comment_list(child_comment_list: list) -> List[ChildComment]:
                                 modified_at=comment['modTime'],
                                 exposed=comment['expose'],
                                 deleted=comment['deleted'],
+                                opened=comment['open'],
                             )
                         , child_comment_list))
     except:
@@ -311,6 +312,7 @@ def parse_comment_list(comment_list: list) -> List[Comment]:
                                 modified_at=comment['modTime'],
                                 exposed=comment['expose'],
                                 deleted=comment['deleted'],
+                                opened=comment['open'],
                             ), comment_list))
     except:
         raise ParseResponseError
@@ -336,11 +338,7 @@ async def _request_comment_list(category: int, date: str, url: str, oid: str, ai
 async def _get_comments(category: int, date: str, oid: str, aid: str,
                         template: str, parsed_response: dict) \
         -> List[Comment]:
-
-    comment_list = parsed_response['result']['commentList']
-    exposed_comment_list = list(filter(lambda comment: comment['expose'] == True, comment_list))
-
-    parsed_comment_list = parse_comment_list(exposed_comment_list)
+    parsed_comment_list = parse_comment_list(parsed_response['result']['commentList'])
     has_replies = list(filter(lambda comment: (comment.reply_count or 0) > 0, parsed_comment_list))
     for comment in has_replies:
         child_comments = await get_child_comments(category, date, oid, aid, template, comment)
@@ -393,10 +391,7 @@ async def get_first_page_child_comments(category: int, date: str, oid: str, aid:
     parsed_child_response, has_child_next_page = await _request_comment_list(category, date, url, oid, aid)
 
     total_pages = parsed_child_response['result']['pageModel']['totalPages']
-
-    child_comment_list = parsed_child_response['result']['commentList']
-    exposed_child_comment_list = list(filter(lambda comment: comment['expose'] == True, child_comment_list))
-    parsed_child_comment_list = parse_child_comment_list(exposed_child_comment_list)
+    parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
 
     logger.debug('* Parsed child commentlist : {}'.format(parsed_child_comment_list))
 
@@ -412,10 +407,7 @@ async def get_more_page_child_comments(category: int, date: str, oid: str, aid: 
     url = '{}/commentBox/cbox/web_neo_list_jsonp.json?ticket=news&templateId={}&pool=cbox5&_callback={}&lang=ko&country=&objectId=news{}%2C{}&categoryId=&pageSize=20&indexSize=10&groupId=&listType=OBJECT&pageType=more&parentCommentNo={}&page={}&userType=&includeAllStatus=true&moreType=next&_={}'.format(
             NAVER_API_HOST, template, jquery['jsonp_key'], oid, aid, parent, page, jquery['nonce'])
     parsed_child_response, has_child_next_page = await _request_comment_list(category, date, url, oid, aid)
-
-    child_comment_list = parsed_child_response['result']['commentList']
-    exposed_child_comment_list = list(filter(lambda comment: comment['expose'] == True, child_comment_list))
-    parsed_child_comment_list = parse_child_comment_list(exposed_child_comment_list)
+    parsed_child_comment_list = parse_child_comment_list(parsed_child_response['result']['commentList'])
 
     logger.debug('* Parsed child commentlist : {}'.format(parsed_child_comment_list))
 
